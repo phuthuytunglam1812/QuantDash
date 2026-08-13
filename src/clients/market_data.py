@@ -20,7 +20,14 @@ def _normalize(frame: pd.DataFrame, symbol: str, provider: str) -> pd.DataFrame:
     missing = set(OHLCV_COLUMNS) - set(frame.columns)
     if missing:
         raise DataProviderError(f"{provider} response is missing fields: {sorted(missing)}")
-    frame = frame[OHLCV_COLUMNS].apply(pd.to_numeric, errors="coerce")
+    available = [*OHLCV_COLUMNS]
+    if "adjusted close" in frame:
+        frame = frame.rename(columns={"adjusted close": "adjusted_close"})
+        available.append("adjusted_close")
+    frame = frame[available].apply(pd.to_numeric, errors="coerce")
+    if "adjusted_close" not in frame:
+        # Twelve Data returns adjusted OHLC directly when adjust=all.
+        frame["adjusted_close"] = frame["close"]
     frame["symbol"] = symbol.upper()
     frame["provider"] = provider
     return frame.sort_index()
@@ -37,7 +44,7 @@ class MarketDataClient(BaseHttpClient):
             raise DataProviderError("ALPHA_VANTAGE_API_KEY is missing")
         payload = self.get_json(
             "https://www.alphavantage.co/query",
-            params={"function": "TIME_SERIES_DAILY", "symbol": symbol, "outputsize": outputsize, "apikey": key},
+            params={"function": "TIME_SERIES_DAILY_ADJUSTED", "symbol": symbol, "outputsize": outputsize, "apikey": key},
         )
         values = payload.get("Time Series (Daily)")
         if not values:
@@ -52,7 +59,10 @@ class MarketDataClient(BaseHttpClient):
         key = os.getenv("TWELVE_DATA_API_KEY", "").strip()
         if not key:
             raise DataProviderError("TWELVE_DATA_API_KEY is missing")
-        params = {"symbol": symbol, "interval": "1day", "outputsize": outputsize, "apikey": key}
+        params = {
+            "symbol": symbol, "interval": "1day", "outputsize": outputsize,
+            "adjust": "all", "apikey": key,
+        }
         if start_date:
             params["start_date"] = start_date
         if end_date:
@@ -80,3 +90,17 @@ class MarketDataClient(BaseHttpClient):
                     f"all price providers failed; Alpha Vantage: {primary_error}; "
                     f"Twelve Data: {fallback_error}"
                 ) from fallback_error
+
+    def alpha_vantage_overview(self, symbol: str) -> dict:
+        """Return Alpha Vantage company overview, including its provider beta."""
+        key = os.getenv("ALPHA_VANTAGE_API_KEY", "").strip()
+        if not key:
+            raise DataProviderError("ALPHA_VANTAGE_API_KEY is missing")
+        payload = self.get_json(
+            "https://www.alphavantage.co/query",
+            params={"function": "OVERVIEW", "symbol": symbol, "apikey": key},
+        )
+        if not payload or payload.get("Note") or payload.get("Information") or payload.get("Error Message"):
+            message = payload.get("Note") or payload.get("Information") or payload.get("Error Message")
+            raise DataProviderError(message or "empty Alpha Vantage overview response")
+        return payload

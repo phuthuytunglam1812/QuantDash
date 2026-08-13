@@ -7,7 +7,8 @@ from src.clean_data import DataQualityError, clean_fundamentals, clean_prices
 def price_frame():
     return pd.DataFrame({
         "date": ["2026-08-04"], "symbol": [" aapl "], "open": [1.0], "high": [2.0],
-        "low": [0.5], "close": [1.5], "volume": [10.0], "provider": ["TEST"],
+        "low": [0.5], "close": [1.5], "adjusted_close": [1.4],
+        "volume": [10.0], "provider": ["TEST"],
     })
 
 
@@ -16,6 +17,7 @@ def test_price_cleaning_normalizes_schema():
     assert clean.iloc[0]["symbol"] == "AAPL"
     assert clean.iloc[0]["provider"] == "test"
     assert str(clean["volume"].dtype) == "int64"
+    assert clean.iloc[0]["price_adjustment"] == "splits_and_dividends"
     assert not any(report["issues"].values())
 
 

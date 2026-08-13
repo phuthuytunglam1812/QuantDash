@@ -11,7 +11,7 @@ from pathlib import Path
 import pandas as pd
 
 
-PRICE_COLUMNS = ["date", "symbol", "open", "high", "low", "close", "volume", "provider"]
+PRICE_COLUMNS = ["date", "symbol", "open", "high", "low", "close", "adjusted_close", "volume", "provider"]
 
 
 def sha256(path: Path) -> str:
@@ -37,7 +37,7 @@ def build_price_layer(raw_dir: Path, output: Path) -> pd.DataFrame:
     prices["date"] = pd.to_datetime(prices["date"], errors="raise")
     prices["symbol"] = prices["symbol"].astype("string")
     prices["provider"] = prices["provider"].astype("string")
-    for column in ["open", "high", "low", "close", "volume"]:
+    for column in ["open", "high", "low", "close", "adjusted_close", "volume"]:
         prices[column] = pd.to_numeric(prices[column], errors="raise")
     prices = prices.sort_values(["symbol", "date"], kind="stable").reset_index(drop=True)
     output.parent.mkdir(parents=True, exist_ok=True)

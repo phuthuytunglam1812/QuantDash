@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.features import _wilder_rsi, add_moving_averages, add_returns, add_risk_features, add_rsi
+from src.features import _wilder_rsi, add_momentum, add_moving_averages, add_returns, add_risk_features, add_rsi
 
 
 def test_returns_match_formulas_and_reset_per_symbol():
@@ -110,3 +110,29 @@ def test_risk_features_reject_nonpositive_close():
     prices = pd.DataFrame({"symbol": ["A"], "date": ["2026-01-01"], "close": [0]})
     with pytest.raises(ValueError, match="strictly positive"):
         add_risk_features(prices)
+
+
+def test_momentum_uses_exact_trading_observation_lags_and_full_warmup():
+    dates = pd.bdate_range("2026-01-01", periods=130)
+    prices = pd.concat([
+        pd.DataFrame({"symbol": "A", "date": dates, "close": np.arange(1, 131, dtype=float)}),
+        pd.DataFrame({"symbol": "B", "date": dates, "close": np.arange(101, 231, dtype=float)}),
+    ], ignore_index=True)
+    result = add_momentum(prices)
+    for symbol, first_close in [("A", 1.0), ("B", 101.0)]:
+        group = result[result.symbol.eq(symbol)].reset_index(drop=True)
+        assert group.loc[:20, "momentum_21d"].isna().all()
+        assert group.loc[:62, "momentum_63d"].isna().all()
+        assert group.loc[:125, "momentum_126d"].isna().all()
+        assert group.loc[21, "momentum_21d"] == pytest.approx(group.loc[21, "close"] / first_close - 1)
+        assert group.loc[126, "momentum_126d"] == pytest.approx(group.loc[126, "close"] / first_close - 1)
+
+
+def test_momentum_does_not_fill_missing_lag_price():
+    prices = pd.DataFrame({
+        "symbol": ["A"] * 23,
+        "date": pd.bdate_range("2026-01-01", periods=23),
+        "close": [100.0] + [np.nan] + list(np.linspace(102, 123, 21)),
+    })
+    result = add_momentum(prices, periods=(21,))
+    assert pd.isna(result.loc[22, "momentum_21d"])

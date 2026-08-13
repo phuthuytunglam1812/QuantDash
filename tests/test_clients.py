@@ -19,11 +19,26 @@ def response(payload):
 def test_alpha_vantage_is_normalized():
     session = Mock()
     session.get.return_value = response({"Time Series (Daily)": {"2026-08-04": {
-        "1. open": "1", "2. high": "2", "3. low": "0.5", "4. close": "1.5", "5. volume": "10"
+        "1. open": "1", "2. high": "2", "3. low": "0.5", "4. close": "1.5",
+        "5. adjusted close": "1.4", "6. volume": "10"
     }}})
     frame = MarketDataClient(session=session).daily_alpha_vantage("aapl")
     assert frame.iloc[0]["symbol"] == "AAPL"
     assert frame.iloc[0]["close"] == 1.5
+    assert frame.iloc[0]["adjusted_close"] == 1.4
+    assert session.get.call_args.kwargs["params"]["function"] == "TIME_SERIES_DAILY_ADJUSTED"
+
+
+@patch.dict("os.environ", {"TWELVE_DATA_API_KEY": "test"})
+def test_twelve_data_requests_all_adjustments():
+    session = Mock()
+    session.get.return_value = response({"values": [{
+        "datetime": "2026-08-04", "open": "1", "high": "2", "low": "0.5",
+        "close": "1.4", "volume": "10",
+    }]})
+    frame = MarketDataClient(session=session).daily_twelve_data("AAPL")
+    assert frame.iloc[0]["adjusted_close"] == 1.4
+    assert session.get.call_args.kwargs["params"]["adjust"] == "all"
 
 
 @patch.dict("os.environ", {"ALPHA_VANTAGE_API_KEY": "a", "TWELVE_DATA_API_KEY": "t"})

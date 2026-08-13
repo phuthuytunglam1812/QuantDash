@@ -118,3 +118,27 @@ def add_risk_features(
     result["drawdown"] = result["close"] / running_peak - 1.0
     result["max_drawdown_to_date"] = result.groupby("symbol", sort=False)["drawdown"].cummin()
     return result
+
+
+def add_momentum(
+    prices: pd.DataFrame, periods: tuple[int, ...] = (21, 63, 126),
+) -> pd.DataFrame:
+    """Add close-to-close momentum using exact trading-observation lags."""
+    required = {"symbol", "date", "close"}
+    if missing := required - set(prices.columns):
+        raise ValueError(f"prices missing momentum inputs: {sorted(missing)}")
+    if not periods or any(period < 1 for period in periods):
+        raise ValueError("momentum periods must contain positive integers")
+    result = prices.copy()
+    result["date"] = pd.to_datetime(result["date"], errors="raise")
+    result["close"] = pd.to_numeric(result["close"], errors="raise")
+    if result["close"].le(0).any():
+        raise ValueError("momentum requires strictly positive close prices")
+    if result.duplicated(["symbol", "date"]).any():
+        raise ValueError("momentum input contains duplicate symbol/date keys")
+    result = result.sort_values(["symbol", "date"], kind="stable").reset_index(drop=True)
+    grouped = result.groupby("symbol", sort=False)["close"]
+    for period in periods:
+        result[f"momentum_{period}d"] = grouped.pct_change(periods=period, fill_method=None)
+        result[f"momentum_{period}d_n_obs"] = result.groupby("symbol", sort=False).cumcount().clip(upper=period)
+    return result

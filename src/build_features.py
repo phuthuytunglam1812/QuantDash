@@ -8,16 +8,20 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.features import add_moving_averages, add_returns, add_risk_features, add_rsi
+from src.features import add_momentum, add_moving_averages, add_returns, add_risk_features, add_rsi
 
 
 def build_features(data_dir: str | Path = "data") -> tuple[pd.DataFrame, dict]:
     processed = Path(data_dir) / "processed"
     prices = pd.read_parquet(processed / "prices_clean.parquet")
-    features = add_risk_features(
+    if "adjusted_close" not in prices:
+        raise ValueError("adjusted_close is required; re-download prices with adjust=all")
+    prices["unadjusted_close"] = prices["close"]
+    prices["close"] = prices["adjusted_close"]
+    features = add_momentum(add_risk_features(
         add_rsi(add_moving_averages(add_returns(prices)), period=14),
         volatility_window=20,
-    )
+    ))
     output = processed / "price_features.parquet"
     features.to_parquet(output, index=False)
     first_rows = features.groupby("symbol", sort=False).head(1)
@@ -39,6 +43,13 @@ def build_features(data_dir: str | Path = "data") -> tuple[pd.DataFrame, dict]:
         "volatility_warmup_nulls_per_symbol": 20,
         "drawdown_non_null": int(features["drawdown"].notna().sum()),
         "max_drawdown_to_date_non_null": int(features["max_drawdown_to_date"].notna().sum()),
+        "momentum_non_null": {
+            f"momentum_{period}d": int(features[f"momentum_{period}d"].notna().sum())
+            for period in (21, 63, 126)
+        },
+        "momentum_warmup_nulls_per_symbol": {
+            "momentum_21d": 21, "momentum_63d": 63, "momentum_126d": 126,
+        },
         "formula": {
             "simple_return": "close_t / close_(t-1) - 1",
             "log_return": "ln(close_t / close_(t-1))",
@@ -46,8 +57,10 @@ def build_features(data_dir: str | Path = "data") -> tuple[pd.DataFrame, dict]:
             "volatility_20d_annualized": "std_sample(last 20 log returns) * sqrt(252)",
             "drawdown": "close / cumulative_max(close) - 1",
             "max_drawdown_to_date": "cumulative_min(drawdown)",
+            "momentum_Nd": "close_t / close_(t-N trading observations) - 1",
         },
-        "note": "Returns use provider close, not adjusted close; first row per symbol is undefined.",
+        "price_basis": "adjusted_close; provider adjust=all (splits and dividends)",
+        "note": "All price-derived features use adjusted_close; first row per symbol is undefined.",
     }
     (processed / "feature_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     return features, report

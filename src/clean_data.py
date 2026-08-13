@@ -19,7 +19,7 @@ class DataQualityError(ValueError):
 
 
 def clean_prices(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
-    required = {"date", "symbol", "open", "high", "low", "close", "volume", "provider"}
+    required = {"date", "symbol", "open", "high", "low", "close", "adjusted_close", "volume", "provider"}
     missing_columns = required - set(frame.columns)
     if missing_columns:
         raise DataQualityError(f"prices missing columns: {sorted(missing_columns)}")
@@ -27,13 +27,15 @@ def clean_prices(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     clean["date"] = pd.to_datetime(clean["date"], errors="coerce").dt.normalize()
     clean["symbol"] = clean["symbol"].astype("string").str.strip().str.upper()
     clean["provider"] = clean["provider"].astype("string").str.strip().str.lower()
-    for column in [*OHLC, "volume"]:
+    for column in [*OHLC, "adjusted_close", "volume"]:
         clean[column] = pd.to_numeric(clean[column], errors="coerce")
     issue_counts = {
         "missing_date": int(clean["date"].isna().sum()),
         "missing_symbol": int((clean["symbol"].isna() | clean["symbol"].eq("")).sum()),
         "duplicate_symbol_date": int(clean.duplicated(["symbol", "date"]).sum()),
         "missing_ohlcv_cells": int(clean[[*OHLC, "volume"]].isna().sum().sum()),
+        "missing_adjusted_close": int(clean["adjusted_close"].isna().sum()),
+        "nonpositive_adjusted_close_rows": int(clean["adjusted_close"].le(0).sum()),
         "nonpositive_price_rows": int(clean[OHLC].le(0).any(axis=1).sum()),
         "negative_volume_rows": int(clean["volume"].lt(0).sum()),
         "high_below_ohlc_rows": int(clean["high"].lt(clean[OHLC].max(axis=1)).sum()),
@@ -43,6 +45,7 @@ def clean_prices(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         details = ", ".join(f"{key}={value}" for key, value in issue_counts.items() if value)
         raise DataQualityError(f"price validation failed: {details}")
     clean["volume"] = clean["volume"].round().astype("int64")
+    clean["price_adjustment"] = "splits_and_dividends"
     clean = clean.sort_values(["symbol", "date"], kind="stable").reset_index(drop=True)
     report = {
         "rows": len(clean), "symbols": int(clean["symbol"].nunique()),

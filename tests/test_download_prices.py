@@ -8,7 +8,8 @@ from src.download_prices import download_universe
 
 def sample_frame(symbol="AAPL"):
     return pd.DataFrame(
-        {"open": [1.0], "high": [2.0], "low": [0.5], "close": [1.5], "volume": [10],
+        {"open": [1.0], "high": [2.0], "low": [0.5], "close": [1.5],
+         "adjusted_close": [1.4], "volume": [10],
          "symbol": [symbol], "provider": ["twelve_data"]},
         index=pd.DatetimeIndex(["2026-08-04"], name="date"),
     )

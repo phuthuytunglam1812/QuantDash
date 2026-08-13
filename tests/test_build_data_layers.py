@@ -10,7 +10,8 @@ def test_build_layers_creates_parquet_and_catalog(tmp_path):
     prices_dir.mkdir(parents=True)
     pd.DataFrame({
         "date": ["2026-08-04"], "symbol": ["AAPL"], "open": [1], "high": [2],
-        "low": [0.5], "close": [1.5], "volume": [10], "provider": ["test"],
+        "low": [0.5], "close": [1.5], "adjusted_close": [1.4],
+        "volume": [10], "provider": ["test"],
     }).to_csv(prices_dir / "AAPL.csv", index=False)
     processed = tmp_path / "processed"
     processed.mkdir()
