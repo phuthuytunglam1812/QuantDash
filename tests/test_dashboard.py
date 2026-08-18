@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 
 from src.dashboard import (
-    filter_screener, prepare_benchmark_comparison, prepare_deep_dive,
+    build_research_summary, filter_screener, prepare_benchmark_comparison, prepare_deep_dive,
     prepare_signal_map, signal_label,
 )
 
@@ -114,3 +114,24 @@ def test_benchmark_comparison_does_not_fill_missing_adjusted_close():
     aligned, summary = prepare_benchmark_comparison(history, "A", "3M")
     assert aligned.date.dt.strftime("%Y-%m-%d").tolist() == ["2026-01-01", "2026-01-03"]
     assert summary["common_observations"] == 2
+
+
+def test_research_summary_context_and_missing_values_are_explicit():
+    universe = pd.DataFrame({
+        "symbol": ["A", "B", "SPY"], "pe_ratio_raw": [10.0, 30.0, None],
+        "profit_margin_raw_pct": [20.0, 10.0, None], "volatility_pct": [25.0, 50.0, 15.0],
+    })
+    detail = pd.Series({
+        "symbol": "A", "pe_ratio_raw": 10.0, "profit_margin_raw_pct": 20.0,
+        "volatility_pct": 25.0, "rsi_14": 75.0, "momentum_label": "Strong",
+        "fundamentals_label": "Positive", "valuation_label": "Unavailable",
+        "beta_252_raw": None, "score_coverage": 0.8, "overall_display_label": "Positive (Incomplete)",
+    })
+    summary = build_research_summary(detail, universe)
+    assert "above 70" in summary["contexts"]["momentum"]
+    assert summary["context_details"]["profitability"]["value"] == "20.0%"
+    assert summary["context_details"]["risk"]["value"] == "25.0%"
+    assert "do not infer a zero" not in summary["contexts"]["valuation"]
+    assert "Valuation score unavailable" in summary["data_gaps"]
+    assert "252-day beta unavailable" in summary["data_gaps"]
+    assert any("80%" in item for item in summary["data_gaps"])

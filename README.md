@@ -2,6 +2,25 @@
 
 An educational equity screener for 20 US stocks plus the SPY benchmark.
 
+## React interface prototype
+
+The new React/Vite interface lives in `frontend/`. The tested Python pipeline remains the
+source of truth: it exports a browser-safe snapshot rather than duplicating financial
+calculations in JavaScript.
+
+```powershell
+# From the repository root, refresh the frontend data after rebuilding the pipeline.
+.\.venv\Scripts\python.exe -m src.export_react_data
+
+# Start the React development server.
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173`. Build the deployable static bundle with `npm run build`.
+The existing Streamlit interface remains available during the migration.
+
 ## Current milestone
 
 W1-06 compares three OHLCV sources plus SEC EDGAR Company Facts. W1-07 assigns
@@ -307,6 +326,15 @@ dates without filling missing values, and are indexed to 100 on their first
 common date. Summary cards show ticker return, SPY return, excess return in
 percentage points, and the common-date count. See
 `docs/benchmark_comparison_methodology.md` for exact rules.
+
+## Survey-informed guided workflow
+
+The app now presents a short optional onboarding guide and a four-stage flow:
+Screen → Compare → Understand → Form a view. Selected-ticker context explains
+P/E, margin, RSI, and volatility relative to the available data, while the
+evidence summary separates strengths, cautions, and missing information. The
+design rationale and survey limitations are recorded in
+`docs/survey_informed_design.md`.
 
 Momentum, fundamentals, valuation, and overall labels are displayed separately.
 Incomplete composites include an explicit coverage warning. Beta and other risk

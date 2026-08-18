@@ -196,3 +196,102 @@ def prepare_benchmark_comparison(
         "missing_policy": "inner join common dates; no fill or imputation",
     }
     return aligned, summary
+
+
+def build_research_summary(detail: pd.Series, universe: pd.DataFrame) -> dict:
+    """Build beginner-friendly context without turning missing data into evidence."""
+    stocks = universe[~universe["symbol"].eq("SPY")].copy()
+
+    def relative_context(
+        column: str, label: str, higher_means: str, display_suffix: str = "",
+    ) -> tuple[str, dict]:
+        value = pd.to_numeric(pd.Series([detail.get(column)]), errors="coerce").iloc[0]
+        peers = pd.to_numeric(stocks.get(column, pd.Series(dtype=float)), errors="coerce").dropna()
+        if pd.isna(value):
+            detail_context = {
+                "label": label, "value": "N/A", "status": "Unavailable",
+                "peer_position": "Peer position cannot be calculated.",
+                "meaning": "Missing data is not treated as zero or favorable evidence.",
+            }
+            return f"{label}: unavailable; do not infer a zero or a favorable result.", detail_context
+        if peers.empty:
+            detail_context = {
+                "label": label, "value": f"{value:.1f}{display_suffix}", "status": "Context unavailable",
+                "peer_position": "No valid peer observations are available.", "meaning": higher_means,
+            }
+            return f"{label}: {value:.1f}; peer context unavailable.", detail_context
+        percentile = float(peers.le(value).mean() * 100)
+        band = "high" if percentile >= 67 else "low" if percentile <= 33 else "middle-range"
+        detail_context = {
+            "label": label, "value": f"{value:.1f}{display_suffix}", "status": band.title(),
+            "peer_position": f"Higher than approximately {percentile:.0f}% of valid stocks in this 20-stock universe.",
+            "meaning": higher_means,
+        }
+        return f"{label}: {value:.1f} ({band}; higher than about {percentile:.0f}% of this 20-stock universe). {higher_means}", detail_context
+
+    rsi = pd.to_numeric(pd.Series([detail.get("rsi_14")]), errors="coerce").iloc[0]
+    if pd.isna(rsi):
+        rsi_context = "RSI 14: unavailable because there is insufficient usable price history."
+        rsi_detail = {"label": "RSI 14", "value": "N/A", "status": "Unavailable", "peer_position": "No RSI position is inferred.", "meaning": "Insufficient usable price history."}
+    elif rsi >= 70:
+        rsi_context = f"RSI 14: {rsi:.1f}, above 70. Recent gains are strong, but this can indicate an overextended move."
+        rsi_detail = {"label": "RSI 14", "value": f"{rsi:.1f}", "status": "Above 70", "peer_position": "Above the conventional upper reference zone.", "meaning": "Recent gains are strong, but the move may be overextended; this is not an automatic sell signal."}
+    elif rsi <= 30:
+        rsi_context = f"RSI 14: {rsi:.1f}, below 30. Selling pressure is strong; this is not automatically a buy signal."
+        rsi_detail = {"label": "RSI 14", "value": f"{rsi:.1f}", "status": "Below 30", "peer_position": "Below the conventional lower reference zone.", "meaning": "Selling pressure is strong; this is not automatically a buy signal."}
+    else:
+        rsi_context = f"RSI 14: {rsi:.1f}, between 30 and 70; neither reference extreme is active."
+        rsi_detail = {"label": "RSI 14", "value": f"{rsi:.1f}", "status": "30–70 range", "peer_position": "Neither conventional RSI reference extreme is active.", "meaning": "Momentum is not currently in an extreme reference zone."}
+
+    valuation_text, valuation_detail = relative_context(
+        "pe_ratio_raw", "P/E", "A higher P/E means investors pay more per dollar of earnings and may increase downside risk if growth slows."
+    )
+    profitability_text, profitability_detail = relative_context(
+        "profit_margin_raw_pct", "Profit margin %", "A higher margin indicates more profit retained per dollar of revenue, but durability still needs investigation.", "%"
+    )
+    risk_text, risk_detail = relative_context(
+        "volatility_pct", "20D annualized volatility %", "Higher volatility means a wider range of recent price outcomes, not necessarily a worse company.", "%"
+    )
+    contexts = {
+        "valuation": valuation_text,
+        "profitability": profitability_text,
+        "risk": risk_text,
+        "momentum": rsi_context,
+    }
+    context_details = {
+        "valuation": valuation_detail, "profitability": profitability_detail,
+        "momentum": rsi_detail, "risk": risk_detail,
+    }
+
+    strengths, cautions, gaps = [], [], []
+    label_map = {
+        "Momentum": detail.get("momentum_label"),
+        "Fundamentals": detail.get("fundamentals_label"),
+        "Valuation": detail.get("valuation_label"),
+    }
+    for name, label in label_map.items():
+        if label in {"Strong", "Positive"}:
+            strengths.append(f"{name}: {label}")
+        elif label in {"Weak", "Very Weak"}:
+            cautions.append(f"{name}: {label}")
+        elif pd.isna(label) or label == "Unavailable":
+            gaps.append(f"{name} score unavailable")
+    beta = pd.to_numeric(pd.Series([detail.get("beta_252_raw")]), errors="coerce").iloc[0]
+    if pd.isna(beta):
+        gaps.append("252-day beta unavailable")
+    elif beta > 1.5:
+        cautions.append(f"Beta {beta:.2f}: historically more market-sensitive than SPY")
+    coverage = pd.to_numeric(pd.Series([detail.get("score_coverage")]), errors="coerce").iloc[0]
+    if pd.isna(coverage):
+        gaps.append("Composite-score coverage unavailable")
+    elif coverage < 1:
+        gaps.append(f"Composite score uses only {coverage:.0%} of intended component weight")
+    return {
+        "contexts": contexts,
+        "context_details": context_details,
+        "strengths": strengths,
+        "cautions": cautions,
+        "data_gaps": gaps,
+        "overall": detail.get("overall_display_label", "Unavailable"),
+        "conclusion_prompt": "Form a view only after checking business context, fundamentals, valuation, price/risk, and data gaps.",
+    }
