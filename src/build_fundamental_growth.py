@@ -17,7 +17,12 @@ QUARTER_FRAME = re.compile(r"^CY(?P<year>\d{4})Q(?P<quarter>[1-4])I?$")
 REVENUE_TAGS = [*FACTS["revenue"][0], "RevenuesNetOfInterestExpense"]
 
 
-def quarterly_facts(payload: dict, tags: list[str], unit: str = "USD") -> pd.DataFrame:
+def quarterly_facts(
+    payload: dict,
+    tags: list[str],
+    unit: str = "USD",
+    as_of: str | pd.Timestamp | None = None,
+) -> pd.DataFrame:
     """Extract SEC-framed standalone quarters, deduplicated by period and tag priority."""
     concepts = payload.get("facts", {}).get("us-gaap", {})
     rows = []
@@ -39,7 +44,10 @@ def quarterly_facts(payload: dict, tags: list[str], unit: str = "USD") -> pd.Dat
         ])
     frame = pd.DataFrame(rows)
     frame["value"] = pd.to_numeric(frame["value"], errors="coerce")
-    frame = frame.dropna(subset=["value"])
+    frame["filed_date"] = pd.to_datetime(frame["filed"], errors="coerce")
+    frame = frame.dropna(subset=["value", "filed_date"])
+    if as_of is not None:
+        frame = frame[frame["filed_date"].dt.normalize().le(pd.Timestamp(as_of).normalize())]
     # Prefer the configured canonical tag, then the most recently filed version.
     frame = frame.sort_values(
         ["year", "quarter", "tag_priority", "filed"],
@@ -48,9 +56,11 @@ def quarterly_facts(payload: dict, tags: list[str], unit: str = "USD") -> pd.Dat
     return frame.sort_values(["year", "quarter"]).reset_index(drop=True)
 
 
-def calculate_company_growth(symbol: str, payload: dict) -> dict:
-    revenue = quarterly_facts(payload, REVENUE_TAGS)
-    income = quarterly_facts(payload, FACTS["net_income"][0])
+def calculate_company_growth(
+    symbol: str, payload: dict, as_of: str | pd.Timestamp | None = None
+) -> dict:
+    revenue = quarterly_facts(payload, REVENUE_TAGS, as_of=as_of)
+    income = quarterly_facts(payload, FACTS["net_income"][0], as_of=as_of)
     base = {
         "symbol": symbol,
         "company_name": payload.get("entityName", ""),

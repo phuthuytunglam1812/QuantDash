@@ -66,3 +66,21 @@ def test_unusual_margin_is_flagged_not_capped():
     assert result["profit_margin"] == pytest.approx(0.95)
     assert result["unusual_margin_flag"]
     assert "exceeds 75%" in result["quality_note"]
+
+
+def test_growth_snapshot_excludes_quarter_filed_after_as_of_date():
+    before_filing = calculate_company_growth("TEST", payload(), as_of="2026-07-31")
+    assert before_filing["latest_frame"] == "CY2025Q2"
+    assert before_filing["revenue_growth_yoy"] is None
+
+    on_filing_date = calculate_company_growth("TEST", payload(), as_of="2026-08-01")
+    assert on_filing_date["latest_frame"] == "CY2026Q2"
+    assert on_filing_date["revenue_growth_yoy"] == pytest.approx(0.2)
+
+
+def test_growth_excludes_missing_filing_date_in_point_in_time_mode():
+    data = payload()
+    revenue = data["facts"]["us-gaap"]["RevenueFromContractWithCustomerExcludingAssessedTax"]["units"]["USD"]
+    revenue[1]["filed"] = ""
+    result = calculate_company_growth("TEST", data, as_of="2026-08-01")
+    assert result["latest_frame"] == "CY2025Q2"

@@ -28,7 +28,8 @@ def export_dashboard_data(output: Path = OUTPUT) -> Path:
     screener, history = build_screener(ROOT / "data")
     stock_columns = [
         "symbol", "company_name", "sic_description", "date", "adjusted_close", "daily_return_pct",
-        "rsi_14", "volatility_pct", "max_drawdown_pct", "momentum_63d_raw_pct", "profit_margin_raw_pct",
+        "rsi_14", "volatility_pct", "max_drawdown_pct", "momentum_21d_raw_pct", "momentum_63d_raw_pct",
+        "momentum_126d_raw_pct", "profit_margin_raw_pct",
         "revenue_growth_yoy_raw_pct", "pe_ratio_raw", "beta_252_raw", "momentum_subscore",
         "quality_subscore", "valuation_subscore", "composite_score", "score_coverage",
         "momentum_label", "fundamentals_label", "valuation_label", "overall_label",

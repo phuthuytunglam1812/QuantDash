@@ -8,6 +8,8 @@ import {
   Download,
   Eye,
   Filter,
+  Info,
+  Minimize2,
   Plus,
   RotateCcw,
   Search,
@@ -26,26 +28,46 @@ const pct = (v, d = 1) =>
 const tfDays = { "3M": 92, "6M": 183, "1Y": 366, "2Y": 732 };
 const fields = {
   composite_score: ["Composite score", 0, 100, 1],
+  momentum_21d_raw_pct: ["Momentum 1M %", -100, 200, 1],
   momentum_63d_raw_pct: ["Momentum 3M %", -100, 200, 1],
+  momentum_126d_raw_pct: ["Momentum 6M %", -100, 400, 1],
   profit_margin_raw_pct: ["Profit margin %", -100, 100, 1],
   revenue_growth_yoy_raw_pct: ["Revenue growth YoY %", -100, 200, 1],
   pe_ratio_raw: ["P/E", -100, 400, 1],
   beta_252_raw: ["Beta 252D", -2, 5, 0.1],
   rsi_14: ["RSI 14", 0, 100, 1],
   volatility_pct: ["20D volatility %", 0, 200, 1],
+  max_drawdown_pct: ["Maximum drawdown %", -100, 0, 1],
+  momentum_subscore: ["Momentum sub-score", 0, 100, 1],
+  quality_subscore: ["Fundamentals sub-score", 0, 100, 1],
+  valuation_subscore: ["Valuation sub-score", 0, 100, 1],
+  score_coverage: ["Score coverage", 0, 1, 0.05],
 };
 const cols = {
+  rank: "Rank",
   symbol: "Ticker",
   company_name: "Company",
+  adjusted_close: "Adjusted close",
+  daily_return_pct: "Daily return",
+  momentum_21d_raw_pct: "Momentum 1M",
   momentum_63d_raw_pct: "Momentum 3M",
+  momentum_126d_raw_pct: "Momentum 6M",
   profit_margin_raw_pct: "Margin",
+  revenue_growth_yoy_raw_pct: "Revenue growth YoY",
   pe_ratio_raw: "P/E",
   beta_252_raw: "Beta",
+  rsi_14: "RSI 14",
+  volatility_pct: "Volatility 20D",
+  max_drawdown_pct: "Max drawdown",
+  momentum_subscore: "Momentum score",
+  quality_subscore: "Fundamentals score",
+  valuation_subscore: "Valuation score",
   composite_score: "Score",
   score_coverage: "Coverage",
   overall_label: "Signal",
 };
 const baseCols = [
+  "rank",
   "symbol",
   "company_name",
   "momentum_63d_raw_pct",
@@ -111,6 +133,39 @@ const METHODS = [
     tag: "Relative evidence",
     text: "Sub-scores are percentile comparisons inside this small universe. Coverage reports how much intended information was available.",
     formula: "Composite = weighted available sub-scores ÷ available weight",
+  },
+  {
+    id: "momentum",
+    n: "08",
+    title: "3-month momentum",
+    tag: "Recent performance",
+    text: "Compares today's adjusted close with the adjusted close 63 trading observations earlier. Positive momentum means price rose over that window; it does not guarantee another rise.",
+    formula: "Momentum 3M = Today ÷ Adjusted Close 63 observations ago − 1",
+  },
+  {
+    id: "valuation",
+    n: "09",
+    title: "P/E and valuation score",
+    tag: "Price paid for earnings",
+    text: "P/E estimates how many dollars investors pay for one dollar of trailing earnings. Nonpositive earnings make the ratio unsuitable for this comparison. Lower P/E receives a higher relative valuation score, but cheap is not automatically good.",
+    formula: "P/E = Share Price ÷ Earnings per Share",
+  },
+  {
+    id: "quality",
+    n: "10",
+    title: "Growth and profit margin",
+    tag: "Fundamental quality",
+    text: "YoY growth compares revenue with the same quarter one year earlier. Profit margin estimates how much profit remains from each dollar of revenue. Both use SEC facts available by the decision date.",
+    formula: "Profit Margin = Same-period Net Income ÷ Revenue",
+  },
+  {
+    id: "beta",
+    n: "11",
+    title: "Beta 252D",
+    tag: "Market sensitivity",
+    text: "Beta describes how a stock historically moved with SPY across 252 aligned trading returns. It is risk context, not a component of attractiveness score, and high or low is not automatically better.",
+    formula:
+      "Beta = Covariance(Stock Return, SPY Return) ÷ Variance(SPY Return)",
   },
 ];
 function Metric({ label, value, meta, t = "cyan", help }) {
@@ -351,12 +406,16 @@ function Chart({ title, kicker, series, labels = [], unit = "" }) {
 }
 function SignalMap({ stocks, onPick }) {
   const valid = stocks.filter(
-      (s) => s.rsi_14 != null && s.pe_ratio_raw != null,
+      (s) => s.rsi_14 != null && s.pe_ratio_raw != null && s.pe_ratio_raw > 0,
     ),
     unplotted = stocks.filter(
-      (s) => s.rsi_14 == null || s.pe_ratio_raw == null,
+      (s) => s.rsi_14 == null || s.pe_ratio_raw == null || s.pe_ratio_raw <= 0,
     ),
-    max = Math.max(...valid.map((s) => s.composite_score || 1), 1);
+    max = Math.max(...valid.map((s) => s.composite_score || 1), 1),
+    sortedPe = valid.map((s) => s.pe_ratio_raw).sort((a, b) => a - b),
+    medianPe = sortedPe.length ? sortedPe[Math.floor(sortedPe.length / 2)] : 25,
+    peCap = Math.max(50, Math.min(200, Math.max(...sortedPe, 50))),
+    dividerY = 390 - (Math.min(medianPe, peCap) / peCap) * 350;
   return (
     <div className="chart-shell signal-map">
       <div className="chart-head">
@@ -368,49 +427,137 @@ function SignalMap({ stocks, onPick }) {
           {valid.length} plotted · {stocks.length - valid.length} missing
         </small>
       </div>
-      <svg viewBox="0 0 1000 430">
-        <g className="grid">
-          <line x1="60" y1="210" x2="970" y2="210" />
-          <line x1="515" y1="25" x2="515" y2="390" />
-        </g>
-        {valid.map((s) => {
-          const x = 60 + (Math.max(0, Math.min(100, s.rsi_14)) / 100) * 910,
-            pe = Math.max(-20, Math.min(200, s.pe_ratio_raw)),
-            y = 390 - ((pe + 20) / 220) * 365,
-            r = 7 + ((s.composite_score || 0) / max) * 14;
-          return (
-            <g
-              key={s.symbol}
-              onClick={() => onPick(s.symbol)}
-              className="bubble"
-            >
-              <circle
-                cx={x}
-                cy={y}
-                r={r}
-                fill={
-                  ["Strong", "Positive"].includes(s.overall_label)
-                    ? "#46e7bc"
-                    : "#6b7fff"
-                }
-              />
-              <text x={x + r + 5} y={y + 4}>
-                {s.symbol}
-              </text>
-              <title>{`${s.symbol} · RSI ${num(s.rsi_14)} · P/E ${num(s.pe_ratio_raw)}`}</title>
-            </g>
-          );
-        })}
-        <text className="axis-label" x="470" y="425">
-          RSI 14 →
-        </text>
-        <text className="axis-label" x="8" y="20">
-          P/E ↑
-        </text>
-      </svg>
+      <div className="quadrant-layout">
+        <svg viewBox="0 0 1000 470">
+          <g className="quadrant-zones">
+            <rect
+              x="60"
+              y="40"
+              width="455"
+              height={dividerY - 40}
+              className="q-caution"
+            />
+            <rect
+              x="515"
+              y="40"
+              width="455"
+              height={dividerY - 40}
+              className="q-watch"
+            />
+            <rect
+              x="60"
+              y={dividerY}
+              width="455"
+              height={390 - dividerY}
+              className="q-defensive"
+            />
+            <rect
+              x="515"
+              y={dividerY}
+              width="455"
+              height={390 - dividerY}
+              className="q-balance"
+            />
+          </g>
+          <g className="grid">
+            <line x1="60" y1={dividerY} x2="970" y2={dividerY} />
+            <line x1="515" y1="40" x2="515" y2="390" />
+          </g>
+          <text className="quadrant-title" x="80" y="68">
+            HIGHER P/E · COOLER RSI
+          </text>
+          <text className="quadrant-title" x="535" y="68">
+            HIGHER P/E · STRONGER RSI
+          </text>
+          <text className="quadrant-title" x="80" y="374">
+            LOWER P/E · COOLER RSI
+          </text>
+          <text className="quadrant-title" x="535" y="374">
+            LOWER P/E · STRONGER RSI
+          </text>
+          {valid.map((s) => {
+            const x = 60 + (Math.max(0, Math.min(100, s.rsi_14)) / 100) * 910,
+              pe = Math.max(0, Math.min(peCap, s.pe_ratio_raw)),
+              y = 390 - (pe / peCap) * 350,
+              r = 7 + ((s.composite_score || 0) / max) * 14;
+            return (
+              <g
+                key={s.symbol}
+                onClick={() => onPick(s.symbol)}
+                className="bubble"
+              >
+                <circle
+                  cx={x}
+                  cy={y}
+                  r={r}
+                  fill={
+                    ["Strong", "Positive"].includes(s.overall_label)
+                      ? "#46e7bc"
+                      : "#6b7fff"
+                  }
+                />
+                <text x={x + r + 5} y={y + 4}>
+                  {s.symbol}
+                </text>
+                <title>{`${s.symbol} · RSI ${num(s.rsi_14)} · P/E ${num(s.pe_ratio_raw)}`}</title>
+              </g>
+            );
+          })}
+          <text className="axis-label" x="445" y="440">
+            RSI 14 · recent momentum →
+          </text>
+          <text className="axis-label" x="8" y="25">
+            P/E · price paid for earnings ↑
+          </text>
+          <text className="axis-tick" x="60" y="418">
+            0
+          </text>
+          <text className="axis-tick" x="505" y="418">
+            50
+          </text>
+          <text className="axis-tick" x="950" y="418">
+            100
+          </text>
+          <text className="axis-tick" x="65" y={dividerY - 8}>
+            Median P/E {num(medianPe)}
+          </text>
+        </svg>
+        <aside className="quadrant-guide">
+          <article className="balance">
+            <b>LOWER P/E + STRONGER RSI</b>
+            <p>
+              Cheaper relative valuation with stronger recent price momentum.
+              Investigate quality and sustainability.
+            </p>
+          </article>
+          <article className="watch">
+            <b>HIGHER P/E + STRONGER RSI</b>
+            <p>
+              Strong momentum but investors pay more per dollar of earnings.
+              Check whether growth supports it.
+            </p>
+          </article>
+          <article className="defensive">
+            <b>LOWER P/E + COOLER RSI</b>
+            <p>
+              Lower valuation with weak momentum. It may be overlooked—or facing
+              genuine problems.
+            </p>
+          </article>
+          <article className="caution">
+            <b>HIGHER P/E + COOLER RSI</b>
+            <p>
+              Higher valuation without strong recent momentum. Review downside
+              risk and the growth thesis carefully.
+            </p>
+          </article>
+        </aside>
+      </div>
       <p className="chart-note">
-        P/E is descriptive—not automatically better when lower. Bubble size
-        represents composite score; beta is risk context only.
+        RSI compares recent gains and losses on a 0–100 scale; 50 is the neutral
+        divider here. P/E is price per dollar of earnings; the horizontal
+        divider is this plotted subset’s median. Quadrants organize
+        questions—not buy/sell signals. Bubble size represents composite score.
       </p>
       {unplotted.length > 0 && (
         <div className="unplotted-panel">
@@ -425,7 +572,9 @@ function SignalMap({ stocks, onPick }) {
             {unplotted.map((stock) => {
               const missing = [
                 stock.rsi_14 == null ? "RSI N/A" : null,
-                stock.pe_ratio_raw == null ? "P/E N/A" : null,
+                stock.pe_ratio_raw == null || stock.pe_ratio_raw <= 0
+                  ? "P/E not meaningful"
+                  : null,
               ].filter(Boolean);
               return (
                 <button key={stock.symbol} onClick={() => onPick(stock.symbol)}>
@@ -475,9 +624,12 @@ function compare(history, symbol, tf) {
 function csv(rows, visible) {
   const body = [
       visible.map((c) => cols[c]).join(","),
-      ...rows.map((r) =>
+      ...rows.map((r, rowIndex) =>
         visible
-          .map((c) => `"${String(r[c] ?? "").replaceAll('"', '""')}"`)
+          .map(
+            (c) =>
+              `"${String(c === "rank" ? rowIndex + 1 : (r[c] ?? "")).replaceAll('"', '""')}"`,
+          )
           .join(","),
       ),
     ].join("\n"),
@@ -490,6 +642,7 @@ function csv(rows, visible) {
 function App() {
   const blank = { search: "", criteria: [], signals: [] };
   const [data, setData] = useState(),
+    [loadError, setLoadError] = useState(""),
     [page, setPage] = useState("research"),
     [draft, setDraft] = useState(blank),
     [filters, setFilters] = useState(blank),
@@ -498,12 +651,27 @@ function App() {
     [visible, setVisible] = useState(baseCols),
     [sort, setSort] = useState("composite_score"),
     [asc, setAsc] = useState(false),
+    [goal, setGoal] = useState(""),
+    [goalDraft, setGoalDraft] = useState(""),
+    [goalAdvice, setGoalAdvice] = useState(""),
+    [goalBusy, setGoalBusy] = useState(false),
+    [filterOpen, setFilterOpen] = useState(true),
     [help, setHelp] = useState();
-  useEffect(() => {
-    fetch("/data/dashboard.json")
-      .then((r) => r.json())
-      .then(setData);
-  }, []);
+  const loadData = () => {
+    setLoadError("");
+    fetch("/data/dashboard.json", { cache: "default" })
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then(setData)
+      .catch(() =>
+        setLoadError(
+          "The prepared market snapshot could not be loaded. Your filters and campaign progress were not changed.",
+        ),
+      );
+  };
+  useEffect(loadData, []);
   const universe = data?.stocks?.filter((s) => s.symbol !== "SPY") || [];
   const filtered = useMemo(
     () =>
@@ -539,7 +707,73 @@ function App() {
         }),
     [universe, filters, sort, asc],
   );
-  const current = universe.find((s) => s.symbol === selected) || universe[0],
+  const spyHistory = data?.history?.SPY || [],
+    spyFromHistory = (() => {
+      const rows = spyHistory.filter((row) => row.adjusted_close != null);
+      if (rows.length < 2) return null;
+      const currentPrice = rows.at(-1).adjusted_close;
+      const prior = rows[Math.max(0, rows.length - 64)]?.adjusted_close;
+      const previous = rows.at(-2)?.adjusted_close;
+      return {
+        momentum_63d_raw_pct:
+          prior > 0 ? (currentPrice / prior - 1) * 100 : null,
+        daily_return_pct:
+          previous > 0 ? (currentPrice / previous - 1) * 100 : null,
+      };
+    })(),
+    spy = data?.stocks?.find((s) => s.symbol === "SPY") || spyFromHistory,
+    positiveMomentum = universe.filter(
+      (s) => s.momentum_63d_raw_pct != null && s.momentum_63d_raw_pct > 0,
+    ),
+    favorable = universe.filter((s) =>
+      ["Strong", "Positive"].includes(s.overall_label),
+    ),
+    outperformingSpy = universe.filter(
+      (s) =>
+        s.momentum_63d_raw_pct != null &&
+        spy?.momentum_63d_raw_pct != null &&
+        s.momentum_63d_raw_pct > spy.momentum_63d_raw_pct,
+    ),
+    marketTrend =
+      (spy?.momentum_63d_raw_pct || 0) > 0 && (spy?.daily_return_pct || 0) > 0
+        ? "UPTREND"
+        : (spy?.momentum_63d_raw_pct || 0) < 0 &&
+            (spy?.daily_return_pct || 0) < 0
+          ? "DOWNTREND"
+          : "MIXED",
+    goalText = goal.toLowerCase(),
+    goalGuide = !goal.trim()
+      ? "Describe your goal and QuantDash will suggest which evidence to inspect first."
+      : /income|dividend|cổ tức|thu nhập/.test(goalText)
+        ? "Income focus: inspect profit margin, earnings quality, drawdown and valuation. Dividend history is not yet in this dataset, so do not infer income from the score."
+        : /safe|stable|ổn định|an toàn|risk|rủi ro/.test(goalText)
+          ? "Stability focus: begin with volatility, drawdown and beta, then check fundamentals. A high composite score does not guarantee low risk."
+          : /growth|tăng trưởng|long.?term|dài hạn/.test(goalText)
+            ? "Growth focus: begin with YoY revenue growth and profit margin, then compare valuation and momentum. High growth does not justify every P/E."
+            : /cheap|value|định giá|p\/e/.test(goalText)
+              ? "Value focus: inspect positive P/E and valuation score together with growth quality. A low P/E can reflect genuine business risk."
+              : "Balanced starting point: compare momentum, fundamentals, valuation and risk separately; use the composite only as a shortlist, not a conclusion.",
+    submitGoal = async () => {
+      const intent = goalDraft.trim();
+      if (!intent) return;
+      setGoalBusy(true);
+      setGoal(intent);
+      try {
+        const response = await fetch("/api/intent-advice", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ intent }),
+        });
+        if (!response.ok) throw new Error("AI service unavailable");
+        const result = await response.json();
+        setGoalAdvice(result.guidance || "");
+      } catch {
+        setGoalAdvice("");
+      } finally {
+        setGoalBusy(false);
+      }
+    },
+    current = universe.find((s) => s.symbol === selected) || universe[0],
     hist = data?.history?.[current?.symbol] || [],
     last = hist.length ? +new Date(hist.at(-1).date) : 0,
     windowRows = hist.filter(
@@ -571,6 +805,19 @@ function App() {
           n === i ? { ...c, [k]: v } : c,
         ),
       });
+  if (loadError)
+    return (
+      <div className="loading load-failure">
+        <Activity />
+        <strong>DATA SNAPSHOT UNAVAILABLE</strong>
+        <p>{loadError}</p>
+        <button onClick={loadData}>RETRY</button>
+        <small>
+          If this continues locally, run python -m src.export_react_data and
+          refresh.
+        </small>
+      </div>
+    );
   if (!data)
     return (
       <div className="loading">
@@ -652,7 +899,7 @@ function App() {
           </section>
         </main>
       ) : page === "simulation" ? (
-        <Simulation data={data} />
+        <Simulation data={data} researchGoal={goal} />
       ) : (
         <main>
           <section className="hero">
@@ -684,6 +931,39 @@ function App() {
             <i />
             <span>04 FORM A VIEW</span>
           </section>
+          <section className="goal-console">
+            <div>
+              <span>YOUR RESEARCH INTENT</span>
+              <h2>What are you trying to achieve?</h2>
+              <p>
+                Examples: long-term growth, lower volatility, income, value, or
+                simply learning. This changes the guidance—not the underlying
+                data or score.
+              </p>
+            </div>
+            <div>
+              <textarea
+                value={goalDraft}
+                onChange={(event) => setGoalDraft(event.target.value)}
+                placeholder="e.g. I want long-term growth but I do not want extremely high risk"
+              />
+              <button
+                className="intent-apply"
+                disabled={!goalDraft.trim() || goalBusy}
+                onClick={submitGoal}
+              >
+                <Sparkles /> {goalBusy ? "ANALYZING..." : "ANALYZE MY INTENT"}
+              </button>
+              {goalBusy ? (
+                <div className="intent-loader">
+                  <i />
+                  <span>Building a research checklist for your goal...</span>
+                </div>
+              ) : (
+                <small>{goalAdvice || goalGuide}</small>
+              )}
+            </div>
+          </section>
           <section className="metrics">
             <Metric
               label="STOCKS SHOWN"
@@ -712,8 +992,141 @@ function App() {
               help={() => setHelp("risk")}
             />
           </section>
-          <section className="workspace">
-            <aside className="filters">
+          <section className="market-pulse">
+            <div className="pulse-heading">
+              <span>MARKET CONTEXT / SPY BENCHMARK</span>
+              <h2>{marketTrend}</h2>
+              <p>
+                SPY represents the broad US equity market reference. It is not
+                automatically a “good signal”; it tells you whether a stock is
+                keeping up with the market opportunity cost.
+              </p>
+            </div>
+            <div
+              className={
+                spy?.momentum_63d_raw_pct >= 0 ? "pulse-good" : "pulse-bad"
+              }
+            >
+              <b>{pct(spy?.momentum_63d_raw_pct)}</b>
+              <span>SPY 3M MOMENTUM</span>
+              <small>
+                {spy?.momentum_63d_raw_pct >= 0
+                  ? "Market rose over 3M"
+                  : "Market fell over 3M"}
+              </small>
+            </div>
+            <div>
+              <b>
+                {positiveMomentum.length} / {universe.length}
+              </b>
+              <span>STOCKS ABOVE 0% MOMENTUM</span>
+              <small>
+                {pct(
+                  (positiveMomentum.length / Math.max(universe.length, 1)) *
+                    100,
+                  0,
+                )}{" "}
+                market breadth
+              </small>
+            </div>
+            <div>
+              <b>
+                {outperformingSpy.length} / {universe.length}
+              </b>
+              <span>OUTPERFORMING SPY</span>
+              <small>
+                {pct(
+                  (outperformingSpy.length / Math.max(universe.length, 1)) *
+                    100,
+                  0,
+                )}{" "}
+                beat SPY on the same 3M window
+              </small>
+            </div>
+            <div>
+              <b>
+                {favorable.length} / {universe.length}
+              </b>
+              <span>RESEARCH-ELIGIBLE SIGNALS</span>
+              <small>
+                {pct(
+                  (favorable.length / Math.max(universe.length, 1)) * 100,
+                  0,
+                )}{" "}
+                Strong or Positive—not automatic investments
+              </small>
+            </div>
+          </section>
+          <div className="benchmark-key">
+            <span>
+              <i className="good" /> POSITIVE: above 0%
+            </span>
+            <span>
+              <i className="beat" /> OUTPERFORMING: stock return &gt; SPY return
+            </span>
+            <span>
+              <i className="bad" /> NEGATIVE: below 0%
+            </span>
+            <small>
+              Magnitude matters: +20% is a larger rise than +2%; -20% is a
+              larger fall than -2%. Always compare identical time windows.
+            </small>
+          </div>
+          {current && spy?.momentum_63d_raw_pct != null && (
+            <section className="direct-benchmark">
+              <div>
+                <span>MARKET NUMBER</span>
+                <b>{pct(spy.momentum_63d_raw_pct)}</b>
+                <small>SPY · 3M RETURN</small>
+              </div>
+              <i>VS</i>
+              <div>
+                <span>COMPANY NUMBER</span>
+                <b>{pct(current.momentum_63d_raw_pct)}</b>
+                <small>{current.symbol} · 3M RETURN</small>
+              </div>
+              <div
+                className={
+                  (current.momentum_63d_raw_pct || 0) >=
+                  spy.momentum_63d_raw_pct
+                    ? "ahead"
+                    : "behind"
+                }
+              >
+                <span>DIFFERENCE FROM MARKET</span>
+                <b>
+                  {pct(
+                    (current.momentum_63d_raw_pct || 0) -
+                      spy.momentum_63d_raw_pct,
+                  )}
+                </b>
+                <small>
+                  {(current.momentum_63d_raw_pct || 0) >=
+                  spy.momentum_63d_raw_pct
+                    ? `${current.symbol} outperformed SPY`
+                    : `${current.symbol} lagged SPY`}
+                </small>
+              </div>
+              <p>
+                Higher means stronger price performance over this same
+                period—not automatically a better company or a reason to buy.
+                Check valuation, fundamentals and risk next.
+              </p>
+            </section>
+          )}
+          <section
+            className={`workspace ${filterOpen ? "" : "filters-closed"}`}
+          >
+            <button
+              className="filter-dock-toggle"
+              onClick={() => setFilterOpen(!filterOpen)}
+              title={filterOpen ? "Retract Filter Lab" : "Open Filter Lab"}
+              aria-label={filterOpen ? "Retract Filter Lab" : "Open Filter Lab"}
+            >
+              {filterOpen ? <Minimize2 /> : <SlidersHorizontal />}
+              <span>{filterOpen ? "RETRACT FILTERS" : "OPEN FILTERS"}</span>
+            </button>
+            <aside className={`filters ${filterOpen ? "" : "collapsed"}`}>
               <div className="panel-title">
                 <SlidersHorizontal /> FILTER LAB
               </div>
@@ -836,20 +1249,104 @@ function App() {
                     value={sort}
                     onChange={(e) => setSort(e.target.value)}
                   >
-                    {Object.entries(cols).map(([k, v]) => (
-                      <option value={k} key={k}>
-                        {v}
-                      </option>
-                    ))}
+                    {Object.entries(cols)
+                      .filter(([k]) => k !== "rank")
+                      .map(([k, v]) => (
+                        <option value={k} key={k}>
+                          {v}
+                        </option>
+                      ))}
                   </select>
                   <button onClick={() => setAsc(!asc)}>
-                    {asc ? "ASC" : "DESC"}
+                    {asc ? "ASC \u2191" : "DESC \u2193"}
                   </button>
                   <button onClick={() => csv(filtered, visible)}>
                     <Download /> CSV
                   </button>
                 </div>
               </div>
+              <p className="sort-note">
+                Current order: <b>{cols[sort]}</b>,{" "}
+                {asc
+                  ? "ascending (smallest first)"
+                  : "descending (largest first)"}
+                . Rank 1 is the first row in this order.
+              </p>
+              <details className="score-guide">
+                <summary>
+                  <Info /> How is the score calculated and ranked?
+                </summary>
+                <div className="plain-formulas">
+                  <h3>THE SCORE IN NORMAL TERMS</h3>
+                  <p>
+                    <b>1. Momentum</b>
+                    <span>
+                      (1M rank × 20%) + (3M rank × 40%) + (6M rank × 40%)
+                    </span>
+                  </p>
+                  <p>
+                    <b>2. Fundamentals</b>
+                    <span>
+                      (YoY revenue-growth rank + profit-margin rank) ÷ 2
+                    </span>
+                  </p>
+                  <p>
+                    <b>3. Valuation</b>
+                    <span>100 − positive P/E percentile</span>
+                  </p>
+                  <p>
+                    <b>4. Composite</b>
+                    <span>
+                      (Momentum × 40%) + (Fundamentals × 40%) + (Valuation ×
+                      20%)
+                    </span>
+                  </p>
+                  <small>
+                    “Rank” means position versus the other stocks in this
+                    20-stock universe, converted to a 0–100 score. It is not the
+                    raw percentage.
+                  </small>
+                </div>
+                <div className="score-guide-grid">
+                  <article>
+                    <b>MOMENTUM / 40%</b>
+                    <p>
+                      20% of the 1-month rank + 40% of the 3-month rank + 40% of
+                      the 6-month rank.
+                    </p>
+                  </article>
+                  <article>
+                    <b>FUNDAMENTALS / 40%</b>
+                    <p>
+                      Half YoY revenue-growth rank and half profit-margin rank.
+                      YoY compares the latest period with the same period one
+                      year earlier.
+                    </p>
+                  </article>
+                  <article>
+                    <b>VALUATION / 20%</b>
+                    <p>
+                      100 minus the positive P/E percentile. Lower P/E scores
+                      higher here, but it is not automatically a better company.
+                    </p>
+                  </article>
+                  <article>
+                    <b>COMPOSITE / 100%</b>
+                    <p>
+                      40% momentum + 40% fundamentals + 20% valuation. Beta, RSI
+                      and volatility are context only and do not raise this
+                      score.
+                    </p>
+                  </article>
+                </div>
+                <p className="score-caveat">
+                  Every input is a relative percentile within this 20-stock
+                  universe. If an input is missing, available weights are
+                  renormalized and coverage is reported; missing data is never
+                  changed to zero. Use ASC/DESC above to rank the current
+                  filtered results.
+                </p>
+              </details>
               <details className="column-picker">
                 <summary>
                   <Eye /> Choose table columns
@@ -884,7 +1381,7 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered.map((s) => (
+                    {filtered.map((s, rowIndex) => (
                       <tr
                         key={s.symbol}
                         className={selected === s.symbol ? "selected" : ""}
@@ -892,7 +1389,9 @@ function App() {
                       >
                         {visible.map((c) => (
                           <td key={c}>
-                            {c === "symbol" ? (
+                            {c === "rank" ? (
+                              <b>#{rowIndex + 1}</b>
+                            ) : c === "symbol" ? (
                               <b>{s[c]}</b>
                             ) : c === "overall_label" ? (
                               <span className={`signal ${tone(s[c])}`}>
@@ -977,6 +1476,63 @@ function App() {
                       </div>
                     ))}
                   </section>
+                  <details className="signal-explainer">
+                    <summary>
+                      <Sparkles /> EXPLAIN THIS SIGNAL
+                    </summary>
+                    <div>
+                      <header>
+                        <span>RULE-BASED RESULT</span>
+                        <b>{current.overall_label || "Unavailable"}</b>
+                      </header>
+                      <p>
+                        The overall label comes from the composite score of{" "}
+                        {num(current.composite_score)}. Scores of 80+, 60–79.9,
+                        40–59.9, 20–39.9, and below 20 map to Strong, Positive,
+                        Neutral, Weak, and Very Weak.
+                      </p>
+                      <div className="signal-scale">
+                        {[
+                          ["80–100", "Strong"],
+                          ["60–79.9", "Positive"],
+                          ["40–59.9", "Neutral"],
+                          ["20–39.9", "Weak"],
+                          ["0–19.9", "Very Weak"],
+                        ].map(([range, label]) => (
+                          <div className={tone(label)} key={label}>
+                            <b>{range}</b>
+                            <span>{label}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <ul>
+                        <li>
+                          Momentum: {num(current.momentum_subscore)} →{" "}
+                          {current.momentum_label || "Unavailable"}
+                        </li>
+                        <li>
+                          Fundamentals: {num(current.quality_subscore)} →{" "}
+                          {current.fundamentals_label || "Unavailable"}
+                        </li>
+                        <li>
+                          Valuation: {num(current.valuation_subscore)} →{" "}
+                          {current.valuation_label || "Unavailable"}
+                        </li>
+                        <li>
+                          Coverage:{" "}
+                          {pct((current.score_coverage || 0) * 100, 0)} of
+                          intended inputs
+                        </li>
+                      </ul>
+                      <small>
+                        Composite weights are 40% momentum, 40% fundamentals,
+                        and 20% valuation, renormalized across available
+                        sub-scores. Beta, RSI, volatility, and drawdown are risk
+                        context and do not change this label. This is not a
+                        buy/sell recommendation.
+                      </small>
+                    </div>
+                  </details>
                   <div className="detail-grid">
                     <Metric
                       label="ADJUSTED CLOSE"
@@ -1076,7 +1632,7 @@ function App() {
                         <div>
                           <b>
                             {bench.excess >= 0 ? "+" : ""}
-                            {num(bench.excess)} pp
+                            {num(bench.excess)}%
                           </b>
                           <small>EXCESS RETURN</small>
                         </div>
@@ -1084,6 +1640,23 @@ function App() {
                           <b>{bench.count}</b>
                           <small>COMMON DATES</small>
                         </div>
+                      </div>
+                      <div
+                        className={`benchmark-meaning ${bench.excess >= 0 ? "ahead" : "behind"}`}
+                      >
+                        <b>
+                          {current.symbol} is{" "}
+                          {bench.excess >= 0 ? "ahead of" : "behind"} SPY by{" "}
+                          {Math.abs(bench.excess).toFixed(1)} percentage points
+                          over {tf}.
+                        </b>
+                        <p>
+                          SPY represents a broad basket of large U.S. companies.
+                          Comparing with it asks whether owning this stock added
+                          value versus a simple market benchmark. This is
+                          context, not proof that the stock will keep
+                          outperforming or underperforming.
+                        </p>
                       </div>
                       <Chart
                         title={`${current.symbol} vs SPY · normalized to 100`}

@@ -11,13 +11,32 @@ import pandas as pd
 from src.features import add_momentum, add_moving_averages, add_returns, add_risk_features, add_rsi
 
 
+def prepare_adjusted_price_basis(prices: pd.DataFrame) -> pd.DataFrame:
+    """Make adjusted close the feature input without inventing a raw close.
+
+    Alpha Vantage supplies raw and adjusted close separately. Twelve Data with
+    ``adjust=all`` supplies adjusted OHLC, so its ``close`` is not a raw close.
+    """
+    if "adjusted_close" not in prices:
+        raise ValueError("adjusted_close is required; re-download prices with adjust=all")
+    result = prices.copy()
+    result["adjusted_close"] = pd.to_numeric(result["adjusted_close"], errors="raise")
+    if result["adjusted_close"].isna().any() or result["adjusted_close"].le(0).any():
+        raise ValueError("adjusted_close must be populated and strictly positive")
+    if "unadjusted_close" not in result:
+        result["unadjusted_close"] = pd.NA
+    provider = result.get("provider", pd.Series("", index=result.index)).astype(str).str.lower()
+    explicit_raw = provider.eq("alpha_vantage")
+    result.loc[explicit_raw, "unadjusted_close"] = result.loc[explicit_raw, "close"]
+    result["unadjusted_close"] = pd.to_numeric(result["unadjusted_close"], errors="coerce")
+    result["close"] = result["adjusted_close"]
+    return result
+
+
 def build_features(data_dir: str | Path = "data") -> tuple[pd.DataFrame, dict]:
     processed = Path(data_dir) / "processed"
     prices = pd.read_parquet(processed / "prices_clean.parquet")
-    if "adjusted_close" not in prices:
-        raise ValueError("adjusted_close is required; re-download prices with adjust=all")
-    prices["unadjusted_close"] = prices["close"]
-    prices["close"] = prices["adjusted_close"]
+    prices = prepare_adjusted_price_basis(prices)
     features = add_momentum(add_risk_features(
         add_rsi(add_moving_averages(add_returns(prices)), period=14),
         volatility_window=20,
@@ -60,6 +79,10 @@ def build_features(data_dir: str | Path = "data") -> tuple[pd.DataFrame, dict]:
             "momentum_Nd": "close_t / close_(t-N trading observations) - 1",
         },
         "price_basis": "adjusted_close; provider adjust=all (splits and dividends)",
+        "raw_close_policy": (
+            "Retain unadjusted_close only when explicitly supplied by the provider; "
+            "Twelve Data adjust=all raw close remains null."
+        ),
         "note": "All price-derived features use adjusted_close; first row per symbol is undefined.",
     }
     (processed / "feature_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")

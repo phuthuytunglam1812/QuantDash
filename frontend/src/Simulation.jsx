@@ -284,6 +284,9 @@ function buildSyntheticMarket(data) {
         );
         return {
           ...stock,
+          simulation_regime_pct: regimes[day - 1],
+          simulation_quality_tilt_pct: qualityTilt * 1.15,
+          simulation_noise_pct: noise,
           adjusted_close: (stock.adjusted_close ?? 100) * (1 + change / 100),
           daily_return_pct: change,
           simulation_change_pct: change,
@@ -318,6 +321,7 @@ const rewardTitle = (worth) =>
 function Lesson({ lesson, onPass }) {
   const [flipped, setFlipped] = useState([]),
     [answers, setAnswers] = useState({}),
+    [pendingAnswer, setPendingAnswer] = useState(null),
     [questionIndex, setQuestionIndex] = useState(0),
     [submitted, setSubmitted] = useState(false);
   const score =
@@ -374,7 +378,9 @@ function Lesson({ lesson, onPass }) {
             <h3>{lesson.quiz[questionIndex][0]}</h3>
             <div className="quiz-options">
               {lesson.quiz[questionIndex][1].map((answer, answerIndex) => {
-                const selected = answers[questionIndex] === answerIndex;
+                const selected =
+                  pendingAnswer === answerIndex ||
+                  answers[questionIndex] === answerIndex;
                 const correct = lesson.quiz[questionIndex][2] === answerIndex;
                 const answered = answers[questionIndex] !== undefined;
                 return (
@@ -389,9 +395,7 @@ function Lesson({ lesson, onPass }) {
                             ? "chosen"
                             : ""
                     }
-                    onClick={() =>
-                      setAnswers({ ...answers, [questionIndex]: answerIndex })
-                    }
+                    onClick={() => setPendingAnswer(answerIndex)}
                     key={answer}
                   >
                     <span>{String.fromCharCode(65 + answerIndex)}</span>
@@ -400,6 +404,17 @@ function Lesson({ lesson, onPass }) {
                 );
               })}
             </div>
+            {answers[questionIndex] === undefined && (
+              <button
+                className="confirm-answer"
+                disabled={pendingAnswer == null}
+                onClick={() =>
+                  setAnswers({ ...answers, [questionIndex]: pendingAnswer })
+                }
+              >
+                CONFIRM ANSWER
+              </button>
+            )}
             {answers[questionIndex] !== undefined && (
               <div
                 className={`quiz-feedback ${
@@ -426,7 +441,10 @@ function Lesson({ lesson, onPass }) {
             disabled={answers[questionIndex] === undefined}
             onClick={() => {
               if (questionIndex === lesson.quiz.length - 1) setSubmitted(true);
-              else setQuestionIndex(questionIndex + 1);
+              else {
+                setQuestionIndex(questionIndex + 1);
+                setPendingAnswer(null);
+              }
             }}
           >
             {questionIndex === lesson.quiz.length - 1
@@ -760,8 +778,53 @@ function Invest({ stocks: marketStocks, day, cash, holdings, onAdvance }) {
   );
 }
 
-function MarketMove({ move, onContinue }) {
+function MarketMove({ move, onContinue, researchGoal }) {
   const pnl = move.afterWorth - move.beforeWorth;
+  const [aiFeedback, setAiFeedback] = useState(null);
+  const [aiBusy, setAiBusy] = useState(true);
+  const held = move.moves.filter((item) => item.held);
+  const best = [...held].sort(
+    (a, b) => (b.contribution || 0) - (a.contribution || 0),
+  )[0];
+  const worst = [...held].sort(
+    (a, b) => (a.contribution || 0) - (b.contribution || 0),
+  )[0];
+  const diversified = (move.positionCount || held.length) >= 3;
+  const regime = move.marketRegime || 0;
+  const goalNote = /safe|stable|risk|an toan|rủi ro/i.test(researchGoal || "")
+    ? "Because your stated goal emphasizes stability, compare concentration and volatility before adding another position."
+    : /growth|long|tăng trưởng|dài hạn/i.test(researchGoal || "")
+      ? "Because your stated goal emphasizes growth, check whether business evidence supports the price momentum instead of judging one session."
+      : "Use the next research round to test the reason you bought, not to invent a new reason after seeing the result.";
+  useEffect(() => {
+    let active = true;
+    fetch("/api/market-feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        research_goal: researchGoal,
+        day: move.day,
+        before_worth: move.beforeWorth,
+        after_worth: move.afterWorth,
+        market_regime_pct: regime,
+        positions: held.map((item) => ({
+          symbol: item.symbol,
+          change_pct: item.change,
+          contribution: item.contribution || 0,
+        })),
+      }),
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error("AI service unavailable");
+        return response.json();
+      })
+      .then((result) => active && setAiFeedback(result))
+      .catch(() => active && setAiFeedback(null))
+      .finally(() => active && setAiBusy(false));
+    return () => {
+      active = false;
+    };
+  }, [move.day]);
   return (
     <section className="market-reveal">
       <div className="stage-kicker">
@@ -814,14 +877,92 @@ function MarketMove({ move, onContinue }) {
         ))}
       </div>
       <div className="market-lesson">
-        <b>SIMULATION NOTE</b>
+        <b>WHY DID THIS RESULT HAPPEN?</b>
         <p>
           A good decision can lose money on one day, and a weak decision can
           gain. Review the evidence and position size—not only the latest
           outcome.
         </p>
       </div>
-      <button className="campaign-primary" onClick={onContinue}>
+      {aiBusy ? (
+        <div className="ai-advice-loader">
+          <i />
+          <b>REVIEWING YOUR DECISION</b>
+          <span>
+            Connecting the portfolio result, market move and your research
+            goal...
+          </span>
+        </div>
+      ) : (
+        <div className="decision-feedback">
+          <article className="feedback-good">
+            <b>WHAT YOU DID WELL</b>
+            <p>
+              {aiFeedback?.did_well ||
+                (diversified
+                  ? `You spread risk across ${move.positionCount || held.length} companies, so one result had less control over the portfolio.`
+                  : move.positionCount || held.length
+                    ? "You made a deliberate selection and can trace exactly what drove the result."
+                    : "You kept cash instead of forcing a trade without conviction.")}
+            </p>
+            {best && best.contribution > 0 ? (
+              <small>
+                Largest positive contribution: {best.symbol}{" "}
+                {(best.contribution || 0) >= 0 ? "+" : ""}$
+                {(best.contribution || 0).toFixed(0)}.
+              </small>
+            ) : (
+              <small>Largest positive contribution: N/A.</small>
+            )}
+          </article>
+          <article className="feedback-review">
+            <b>WHAT TO REVIEW NEXT</b>
+            <p>
+              {aiFeedback?.review_next ||
+                (!diversified && (move.positionCount || held.length)
+                  ? "Your portfolio is concentrated. Check whether that risk was intentional and supported by evidence."
+                  : "Diversification helps, but correlated companies can still fall together. Review each position's role.")}
+            </p>
+            {worst && worst.contribution < 0 ? (
+              <small>
+                Largest negative contribution: {worst.symbol}{" "}
+                {(worst.contribution || 0) >= 0 ? "+" : ""}$
+                {(worst.contribution || 0).toFixed(0)}.
+              </small>
+            ) : (
+              <small>Largest negative contribution: N/A.</small>
+            )}
+          </article>
+          <article className="feedback-bias">
+            <b>DON'T LET ONE DAY FOOL YOU</b>
+            <p>
+              {aiFeedback?.bias_check || (
+                <>
+                  A profit does not automatically make the analysis good, and a
+                  loss does not automatically make it bad. The move combines a
+                  market regime ({regime >= 0 ? "+" : ""}
+                  {regime.toFixed(2)}%), a score tilt and a seeded
+                  volatility-scaled shock. It is fictional and reproducible, not
+                  a forecast.
+                </>
+              )}
+            </p>
+            <small>{aiFeedback?.next_action || goalNote}</small>
+          </article>
+        </div>
+      )}
+      <small className="ai-feedback-status">
+        {aiBusy
+          ? "AI COACH IS REVIEWING THIS DECISION..."
+          : aiFeedback
+            ? "PERSONALIZED BY OPENAI"
+            : "AI UNAVAILABLE — SHOWING LOCAL SAFETY FALLBACK"}
+      </small>
+      <button
+        className="campaign-primary"
+        disabled={aiBusy}
+        onClick={onContinue}
+      >
         {move.done ? "VIEW FINAL RANK" : `CONTINUE TO DAY ${move.day + 1}`}{" "}
         <ArrowRight />
       </button>
@@ -829,26 +970,26 @@ function MarketMove({ move, onContinue }) {
   );
 }
 
-export default function Simulation({ data }) {
+export default function Simulation({ data, researchGoal = "" }) {
   const scenario = useMemo(() => buildSyntheticMarket(data), [data]);
   const [state, setState] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("qd-campaign"));
-      return saved?.version === 3
+      return saved?.version === 4
         ? saved
         : {
-            version: 3,
+            version: 4,
             day: 0,
-            phase: "learn",
+            phase: "path",
             cash: 0,
             holdings: {},
             history: [],
           };
     } catch {
       return {
-        version: 3,
+        version: 4,
         day: 0,
-        phase: "learn",
+        phase: "path",
         cash: 0,
         holdings: {},
         history: [],
@@ -863,9 +1004,9 @@ export default function Simulation({ data }) {
     reset = () => {
       localStorage.removeItem("qd-campaign");
       setState({
-        version: 3,
+        version: 4,
         day: 0,
-        phase: "learn",
+        phase: "path",
         cash: 0,
         holdings: {},
         history: [],
@@ -914,14 +1055,20 @@ export default function Simulation({ data }) {
         ),
       moves = scenario[Math.min(state.day + 1, 5)]
         .filter((stock) => stock.symbol !== "SPY")
-        .map((stock) => ({
-          symbol: stock.symbol,
-          change:
+        .map((stock) => {
+          const change =
             prices[stock.symbol] && nextPrices[stock.symbol]
               ? (nextPrices[stock.symbol] / prices[stock.symbol] - 1) * 100
-              : 0,
-          held: Boolean(holdings[stock.symbol]),
-        }))
+              : 0;
+          return {
+            symbol: stock.symbol,
+            change,
+            held: Boolean(holdings[stock.symbol]),
+            contribution:
+              (holdings[stock.symbol] || 0) *
+              ((nextPrices[stock.symbol] || 0) - (prices[stock.symbol] || 0)),
+          };
+        })
         .sort((a, b) => Math.abs(b.change) - Math.abs(a.change)),
       done = state.day === LESSONS.length - 1;
     setState({
@@ -935,6 +1082,11 @@ export default function Simulation({ data }) {
         beforeWorth,
         afterWorth: worth,
         moves,
+        marketRegime:
+          scenario[Math.min(state.day + 1, 5)][0]?.simulation_regime_pct || 0,
+        positionCount: Object.values(holdings).filter(
+          (quantity) => quantity > 0,
+        ).length,
         done,
       },
       history: [
@@ -984,6 +1136,14 @@ export default function Simulation({ data }) {
             className={
               i < state.day ? "done" : i === state.day ? "current" : "locked"
             }
+            onClick={() => {
+              if (i === state.day && state.phase === "path")
+                setState({ ...state, phase: "learn" });
+            }}
+            role={
+              i === state.day && state.phase === "path" ? "button" : undefined
+            }
+            tabIndex={i === state.day && state.phase === "path" ? 0 : undefined}
             key={l.title}
           >
             <span>
@@ -996,6 +1156,11 @@ export default function Simulation({ data }) {
           </div>
         ))}
       </div>
+      {state.phase === "path" && (
+        <p className="path-prompt">
+          Select the glowing Day {state.day + 1} checkpoint to begin.
+        </p>
+      )}
       {state.phase === "inspect" && (
         <SimulationWorkbench
           stocks={scenario[state.day]}
@@ -1020,7 +1185,11 @@ export default function Simulation({ data }) {
         />
       )}{" "}
       {state.phase === "market" && state.marketMove && (
-        <MarketMove move={state.marketMove} onContinue={continueAfterMarket} />
+        <MarketMove
+          move={state.marketMove}
+          onContinue={continueAfterMarket}
+          researchGoal={researchGoal}
+        />
       )}{" "}
       {state.phase === "final" && (
         <section className="final-rank">
@@ -1033,15 +1202,17 @@ export default function Simulation({ data }) {
           <button onClick={reset}>PLAY AGAIN</button>
         </section>
       )}
-      <aside className="campaign-ledger">
-        <b>RUN STATUS</b>
-        <span>Day {state.day + 1} / 5</span>
-        <span>Virtual cash ${state.cash.toFixed(0)}</span>
-        <span>{Object.keys(state.holdings).length} positions</span>
-        <small>
-          <LockKeyhole /> Progress saved on this device
-        </small>
-      </aside>
+      {state.phase !== "path" && (
+        <aside className="campaign-ledger">
+          <b>RUN STATUS</b>
+          <span>Day {state.day + 1} / 5</span>
+          <span>Virtual cash ${state.cash.toFixed(0)}</span>
+          <span>{Object.keys(state.holdings).length} positions</span>
+          <small>
+            <LockKeyhole /> Progress saved on this device
+          </small>
+        </aside>
+      )}
     </main>
   );
 }

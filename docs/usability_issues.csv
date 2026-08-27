@@ -1,0 +1,6 @@
+participant,experience,task,completed,time_seconds,seq_1_to_7,observation_or_quote,severity,status,owner
+P1,,,,,,,,pending external session,
+P2,,,,,,,,pending external session,
+P3,,,,,,,,pending external session,
+P4,,,,,,,,optional external session,
+P5,,,,,,,,optional external session,

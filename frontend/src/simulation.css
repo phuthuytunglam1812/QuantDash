@@ -41,6 +41,19 @@
 .campaign-reset svg {
   width: 14px;
 }
+.campaign-reset:hover {
+  color: #e7f7ff;
+  border-color: #6ee1fb;
+  box-shadow: 0 0 22px #54dfff35;
+  transform: translateY(-2px);
+}
+.path-prompt {
+  margin: -25px auto 60px;
+  text-align: center;
+  color: #79dff7;
+  font: 9px "Space Mono";
+  letter-spacing: 0.08em;
+}
 .day-path {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -294,6 +307,22 @@
   border-color: #66dfff;
   transform: translateY(-2px);
 }
+.quiz-options button.chosen {
+  border-color: #75e4ff;
+  background: linear-gradient(135deg, #0d2940, #111c3c);
+  color: #f2fbff;
+  box-shadow:
+    0 0 0 1px #75e4ff55,
+    0 0 24px #52d9ff38,
+    inset 0 0 22px #62dcff12;
+  transform: translateY(-2px);
+}
+.quiz-options button.chosen > span {
+  border-color: #8ceaff;
+  background: #123b56;
+  color: #ffffff;
+  box-shadow: 0 0 14px #65dfff55;
+}
 .quiz-options button > span {
   display: grid;
   flex: 0 0 30px;
@@ -312,6 +341,48 @@
   border-color: #ff6e86;
   background: #32131d;
   color: #ffe5e9;
+}
+.confirm-answer {
+  width: 100%;
+  margin-top: 14px;
+  padding: 13px;
+  border: 1px solid #6ddff8;
+  border-radius: 7px;
+  background: #12304a;
+  color: #eefaff;
+  font: 700 9px "Space Mono";
+  cursor: pointer;
+}
+.confirm-answer:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.ai-feedback-status {
+  display: none;
+  margin-top: 13px;
+  color: #6fdff8;
+  font: 7px "Space Mono";
+  letter-spacing: 0.1em;
+}
+.ai-advice-loader {
+  flex-direction: column;
+  justify-content: center;
+  min-height: 210px;
+  margin-top: 14px;
+  text-align: center;
+}
+.ai-advice-loader b {
+  color: #83e6ff;
+  font: 700 9px "Space Mono";
+  letter-spacing: 0.11em;
+}
+.ai-advice-loader span {
+  color: #8295ac;
+  font: 10px/1.6 "Space Mono";
+}
+.market-reveal .campaign-primary:disabled {
+  opacity: 0.45;
+  cursor: wait;
 }
 .quiz-feedback {
   display: flex;
@@ -1344,6 +1415,43 @@
   color: #9c9276;
   font-size: 12px;
 }
+.decision-feedback {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 14px;
+}
+.decision-feedback article {
+  min-height: 135px;
+  padding: 17px;
+  border: 1px solid #27455e;
+  border-radius: 8px;
+  background: #07111e;
+}
+.decision-feedback b {
+  color: #7adef6;
+  font: 700 8px "Space Mono";
+  letter-spacing: 0.12em;
+}
+.decision-feedback p,
+.decision-feedback small {
+  color: #94a4b8;
+  line-height: 1.6;
+}
+.decision-feedback small {
+  display: block;
+  margin-top: 9px;
+  font: 8px "Space Mono";
+}
+.feedback-good {
+  border-top: 2px solid #69dda8 !important;
+}
+.feedback-review {
+  border-top: 2px solid #f5c85f !important;
+}
+.feedback-bias {
+  border-top: 2px solid #8e7cff !important;
+}
 .market-reveal .campaign-primary {
   margin-top: 22px;
 }
@@ -1436,6 +1544,9 @@
   opacity: 0.4;
 }
 @media (max-width: 800px) {
+  .decision-feedback {
+    grid-template-columns: 1fr;
+  }
   .day-path {
     height: auto;
     display: flex;

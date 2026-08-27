@@ -42,13 +42,28 @@ def ticker_to_cik(payload: dict) -> dict[str, str]:
     }
 
 
-def latest_fact(company_facts: dict, tags: list[str], unit: str) -> FactValue:
+def latest_fact(
+    company_facts: dict, tags: list[str], unit: str, as_of: str | pd.Timestamp | None = None
+) -> FactValue:
+    """Select the latest eligible fact known by ``as_of``.
+
+    SEC facts without a valid filing date are never assumed to be available.
+    The filing date, rather than the fiscal period end, controls availability.
+    """
     concepts = company_facts.get("facts", {}).get("us-gaap", {})
     candidates: list[tuple[dict, str]] = []
     for tag in tags:
         for item in concepts.get(tag, {}).get("units", {}).get(unit, []):
             if item.get("form") in {"10-K", "10-Q", "20-F", "40-F"} and item.get("filed"):
                 candidates.append((item, tag))
+    if as_of is not None:
+        cutoff = pd.Timestamp(as_of).normalize()
+        candidates = [
+            pair
+            for pair in candidates
+            if pd.notna(filed := pd.to_datetime(pair[0].get("filed"), errors="coerce"))
+            and filed.normalize() <= cutoff
+        ]
     if not candidates:
         return FactValue(unit=unit)
     # A filing can repeat quarterly, YTD, and comparative values with the same
@@ -67,7 +82,13 @@ def latest_fact(company_facts: dict, tags: list[str], unit: str) -> FactValue:
     )
 
 
-def build_snapshot(symbol: str, cik: str, submissions: dict, facts: dict) -> dict:
+def build_snapshot(
+    symbol: str,
+    cik: str,
+    submissions: dict,
+    facts: dict,
+    as_of: str | pd.Timestamp | None = None,
+) -> dict:
     row = {
         "symbol": symbol,
         "cik": cik,
@@ -79,7 +100,7 @@ def build_snapshot(symbol: str, cik: str, submissions: dict, facts: dict) -> dic
         "source": "SEC EDGAR Company Facts",
     }
     for field, (tags, unit) in FACTS.items():
-        fact = latest_fact(facts, tags, unit)
+        fact = latest_fact(facts, tags, unit, as_of=as_of)
         row[field] = fact.value
         row[f"{field}_period_end"] = fact.period_end
         row[f"{field}_filed"] = fact.filed

@@ -2,6 +2,167 @@
 
 An educational equity screener for 20 US stocks plus the SPY benchmark.
 
+## What the product does
+
+QuantDash combines a transparent stock screener, ticker/SPY research console,
+plain-language formula library, and five-day educational Market Quest. It is a
+research starting point for beginners—not a brokerage, forecast engine, or
+personalized investment recommendation.
+
+## Data sources and price basis
+
+- Twelve Data `adjust=all` or Alpha Vantage Daily Adjusted for historical OHLCV
+- SEC EDGAR Company Facts for reported fundamentals and filing provenance
+- SPY as the market benchmark
+
+All price-derived features and comparisons use split-and-dividend-adjusted
+close. Stock/SPY pairs use exact common dates without forward/zero filling.
+
+## Core formulas
+
+- Return: `Adjusted Close today / previous Adjusted Close - 1`
+- SMA 20: `(Day 1 + ... + Day 20) / 20`
+- RSI 14: `100 - 100 / (1 + Wilder Average Gain / Wilder Average Loss)`
+- Volatility: `sample std. dev. of 20 log returns * sqrt(252)`
+- Drawdown: `Adjusted Close / running peak - 1`
+- Momentum: `Adjusted Close today / Adjusted Close N observations ago - 1`
+- Beta: `covariance(stock return, SPY return) / variance(SPY return)`
+
+Exact conventions are linked throughout `docs/` and in the in-app method library.
+
+## Limitations
+
+- The 20-stock universe is small; percentile steps are coarse and may have
+  survivorship/selection bias.
+- Fundamental coverage varies by SEC tag and issuer; missing values remain missing.
+- Scores are relative cross-sectional ranks and discard some magnitude information.
+- Beta and historical volatility describe past behavior; they are not forecasts.
+- Momentum research uses overlapping forward windows and omits costs, taxes,
+  slippage, and capacity.
+- Market Quest uses a seeded fictional market and virtual money.
+- The product is educational and does not provide financial advice.
+
+## Quick start (recommended)
+
+### What you need
+
+- Python 3.11 or newer
+- Node.js 20 or newer (Node 22 LTS is recommended)
+- Git
+
+The React demo uses the prepared snapshot in `frontend/public/data/dashboard.json`,
+so API keys are **not required** just to run and explore the website.
+
+### Windows PowerShell
+
+Run these commands from the repository root:
+
+```powershell
+# 1. Create and activate the Python environment.
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+# 2. Install the Python pipeline and test dependencies.
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+
+# 3. Install the React dependencies.
+cd frontend
+npm install
+
+# 4. Start the website.
+npm run dev
+```
+
+Open <http://localhost:5173> in Chrome or Edge. Keep the terminal open while
+using the website. Press `Ctrl+C` in that terminal to stop it.
+
+### Optional AI guidance
+
+Research-intent guidance and Market Quest coaching can use the OpenAI Responses
+API without exposing the secret to React. Copy `.env.example` to `.env`, add a
+newly rotated key, and run the private proxy in a second PowerShell window:
+
+```powershell
+cd "C:\Users\hoang\OneDrive\Documents\paul\code in general\QuantDash"
+.\.venv\Scripts\python.exe -m uvicorn ai_server:app --host 127.0.0.1 --port 8000
+```
+
+Then run `npm run dev` from `frontend` as usual. Vite proxies `/api` to the
+private server. If the key/server/network is unavailable, the interface labels
+and uses its local safety fallback instead of crashing.
+
+If PowerShell blocks environment activation, run this once in the same terminal:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+```
+
+### macOS or Linux
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+cd frontend
+npm install
+npm run dev
+```
+
+Then open <http://localhost:5173>.
+
+## Run it again later
+
+The dependencies only need to be installed once. On later runs:
+
+```powershell
+cd frontend
+npm run dev
+```
+
+The camera-based 67 game needs browser camera permission. Camera access works
+on `localhost`; approve the permission prompt when the game starts.
+
+## Verify the installation
+
+From the repository root:
+
+```powershell
+# Python regression suite
+.\.venv\Scripts\python.exe -m pytest -q
+
+# React production build
+cd frontend
+npm run build
+```
+
+## Dependency files
+
+- `requirements.txt` — Python pipeline, Streamlit, and automated tests
+- `requirements-notebook.txt` — optional notebook-only additions
+- `frontend/package.json` and `frontend/package-lock.json` — React website,
+  Vite, icons, formatting, and MediaPipe camera tracking
+
+Do not commit `.env`. Copy `.env.example` to `.env` only when refreshing data
+from providers, then add your own API keys:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+## Common problems
+
+- **`npm` is not recognized:** install Node.js, reopen PowerShell, and retry.
+- **Port 5173 is occupied:** run `npm run dev -- --port 5174`, then open
+  <http://localhost:5174>.
+- **The page shows old campaign progress:** use **Reset campaign** in Market Quest.
+- **Camera does not start:** allow camera access in the browser site settings and
+  reload the page.
+- **Prepared market data is missing:** from the repository root, run
+  `.\.venv\Scripts\python.exe -m src.export_react_data`.
+
 ## React interface prototype
 
 The new React/Vite interface lives in `frontend/`. The tested Python pipeline remains the
@@ -339,3 +500,20 @@ design rationale and survey limitations are recorded in
 Momentum, fundamentals, valuation, and overall labels are displayed separately.
 Incomplete composites include an explicit coverage warning. Beta and other risk
 context do not affect labels. See `docs/signal_label_rules.md`.
+
+## Week 3 validation and research
+
+```powershell
+python -m src.validate_lookahead
+python -m src.momentum_research
+pytest -q
+```
+
+- `docs/lookahead_bias_checklist.md` — future-information audit
+- `docs/point_in_time_fundamental_rule.md` — SEC filing-date availability
+- `docs/split_dividend_handling.md` — adjusted-price conventions
+- `docs/missing_dates_lookback_test_report.md` — edge cases and warm-up rules
+- `docs/error_handling_test_report.md` — P/E, variance, and provider failures
+- `notebook/02_momentum_quintile_research.ipynb` — top/bottom quintile study
+- `docs/architecture.md` — end-to-end data flow
+- `docs/deployment.md` — Streamlit and React deployment runbooks

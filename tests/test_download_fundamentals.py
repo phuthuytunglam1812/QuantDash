@@ -28,6 +28,21 @@ def test_latest_fact_prefers_standalone_sec_frame_over_ytd_value():
     assert fact.value == 2
 
 
+def test_latest_fact_respects_filing_date_as_of_rule():
+    assert latest_fact(facts_payload(), ["Assets"], "USD", as_of="2026-04-30").value == 10
+    assert latest_fact(facts_payload(), ["Assets"], "USD", as_of="2026-05-01").value == 12
+
+
+def test_latest_fact_does_not_use_undated_or_future_filing():
+    data = facts_payload()
+    items = data["facts"]["us-gaap"]["Assets"]["units"]["USD"]
+    items.extend([
+        {"val": 999, "end": "2026-06-30", "filed": "", "form": "10-Q"},
+        {"val": 888, "end": "2026-06-30", "filed": "2026-08-01", "form": "10-Q"},
+    ])
+    assert latest_fact(data, ["Assets"], "USD", as_of="2026-07-31").value == 12
+
+
 def test_snapshot_keeps_provenance():
     row = build_snapshot("TEST", "0000000001", {"name": "Example Inc.", "exchanges": ["NYSE"]}, facts_payload())
     assert row["assets"] == 12
