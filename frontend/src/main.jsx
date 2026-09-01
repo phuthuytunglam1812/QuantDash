@@ -651,10 +651,6 @@ function App() {
     [visible, setVisible] = useState(baseCols),
     [sort, setSort] = useState("composite_score"),
     [asc, setAsc] = useState(false),
-    [goal, setGoal] = useState(""),
-    [goalDraft, setGoalDraft] = useState(""),
-    [goalAdvice, setGoalAdvice] = useState(""),
-    [goalBusy, setGoalBusy] = useState(false),
     [filterOpen, setFilterOpen] = useState(true),
     [help, setHelp] = useState();
   const loadData = () => {
@@ -741,38 +737,6 @@ function App() {
             (spy?.daily_return_pct || 0) < 0
           ? "DOWNTREND"
           : "MIXED",
-    goalText = goal.toLowerCase(),
-    goalGuide = !goal.trim()
-      ? "Describe your goal and QuantDash will suggest which evidence to inspect first."
-      : /income|dividend|cổ tức|thu nhập/.test(goalText)
-        ? "Income focus: inspect profit margin, earnings quality, drawdown and valuation. Dividend history is not yet in this dataset, so do not infer income from the score."
-        : /safe|stable|ổn định|an toàn|risk|rủi ro/.test(goalText)
-          ? "Stability focus: begin with volatility, drawdown and beta, then check fundamentals. A high composite score does not guarantee low risk."
-          : /growth|tăng trưởng|long.?term|dài hạn/.test(goalText)
-            ? "Growth focus: begin with YoY revenue growth and profit margin, then compare valuation and momentum. High growth does not justify every P/E."
-            : /cheap|value|định giá|p\/e/.test(goalText)
-              ? "Value focus: inspect positive P/E and valuation score together with growth quality. A low P/E can reflect genuine business risk."
-              : "Balanced starting point: compare momentum, fundamentals, valuation and risk separately; use the composite only as a shortlist, not a conclusion.",
-    submitGoal = async () => {
-      const intent = goalDraft.trim();
-      if (!intent) return;
-      setGoalBusy(true);
-      setGoal(intent);
-      try {
-        const response = await fetch("/api/intent-advice", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ intent }),
-        });
-        if (!response.ok) throw new Error("AI service unavailable");
-        const result = await response.json();
-        setGoalAdvice(result.guidance || "");
-      } catch {
-        setGoalAdvice("");
-      } finally {
-        setGoalBusy(false);
-      }
-    },
     current = universe.find((s) => s.symbol === selected) || universe[0],
     hist = data?.history?.[current?.symbol] || [],
     last = hist.length ? +new Date(hist.at(-1).date) : 0,
@@ -899,7 +863,7 @@ function App() {
           </section>
         </main>
       ) : page === "simulation" ? (
-        <Simulation data={data} researchGoal={goal} />
+        <Simulation data={data} researchGoal="" />
       ) : (
         <main>
           <section className="hero">
@@ -930,39 +894,6 @@ function App() {
             <span>03 UNDERSTAND</span>
             <i />
             <span>04 FORM A VIEW</span>
-          </section>
-          <section className="goal-console">
-            <div>
-              <span>YOUR RESEARCH INTENT</span>
-              <h2>What are you trying to achieve?</h2>
-              <p>
-                Examples: long-term growth, lower volatility, income, value, or
-                simply learning. This changes the guidance—not the underlying
-                data or score.
-              </p>
-            </div>
-            <div>
-              <textarea
-                value={goalDraft}
-                onChange={(event) => setGoalDraft(event.target.value)}
-                placeholder="e.g. I want long-term growth but I do not want extremely high risk"
-              />
-              <button
-                className="intent-apply"
-                disabled={!goalDraft.trim() || goalBusy}
-                onClick={submitGoal}
-              >
-                <Sparkles /> {goalBusy ? "ANALYZING..." : "ANALYZE MY INTENT"}
-              </button>
-              {goalBusy ? (
-                <div className="intent-loader">
-                  <i />
-                  <span>Building a research checklist for your goal...</span>
-                </div>
-              ) : (
-                <small>{goalAdvice || goalGuide}</small>
-              )}
-            </div>
           </section>
           <section className="metrics">
             <Metric

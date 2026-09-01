@@ -1380,7 +1380,6 @@ footer {
   border-radius: 6px;
   background: #07101b;
 }
-.goal-console,
 .market-pulse,
 .score-guide,
 .benchmark-meaning,
@@ -1393,56 +1392,6 @@ footer {
     rgba(10, 15, 34, 0.96)
   );
 }
-.goal-console {
-  display: grid;
-  grid-template-columns: minmax(220px, 0.8fr) minmax(300px, 1.2fr);
-  gap: 22px;
-  margin: 22px 0;
-  padding: 22px;
-}
-.goal-console textarea {
-  width: 100%;
-  min-height: 92px;
-  box-sizing: border-box;
-  padding: 14px;
-  border: 1px solid #2b5874;
-  border-radius: 7px;
-  resize: vertical;
-  background: #050d18;
-  color: #e8f4ff;
-  font: 12px "Space Mono";
-}
-.intent-apply {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  margin: 10px 0;
-  padding: 13px;
-  border: 1px solid #73def8;
-  border-radius: 7px;
-  background: linear-gradient(100deg, #174d67, #4540a1);
-  color: #fff;
-  font: 700 9px "Space Mono";
-  cursor: pointer;
-}
-.intent-apply:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.intent-apply svg {
-  width: 15px;
-}
-.goal-console em {
-  display: block;
-  margin-top: 8px;
-  color: #596b81;
-  font: 7px "Space Mono";
-  font-style: normal;
-  letter-spacing: 0.1em;
-}
-.intent-loader,
 .ai-advice-loader {
   display: flex;
   align-items: center;
@@ -1455,7 +1404,6 @@ footer {
   color: #9cb0c7;
   font: 9px "Space Mono";
 }
-.intent-loader i,
 .ai-advice-loader i {
   flex: 0 0 16px;
   width: 16px;
@@ -1470,7 +1418,6 @@ footer {
     transform: rotate(360deg);
   }
 }
-.goal-console small,
 .market-pulse p,
 .score-guide p,
 .benchmark-meaning p,
@@ -1840,7 +1787,6 @@ footer {
   }
 }
 @media (max-width: 700px) {
-  .goal-console,
   .market-pulse,
   .score-guide-grid {
     grid-template-columns: 1fr;
